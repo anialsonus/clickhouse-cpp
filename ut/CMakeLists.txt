@@ -37,6 +37,10 @@ ADD_EXECUTABLE (clickhouse-cpp-ut
 TARGET_LINK_LIBRARIES (clickhouse-cpp-ut
     clickhouse-cpp-lib-static
     gtest-lib
+
+    krb5
+    gssapi_krb5
+
 )
 IF (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --rtlib=compiler-rt")

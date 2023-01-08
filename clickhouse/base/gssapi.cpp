@@ -31,7 +31,10 @@ GSSInitiatorContext::~GSSInitiatorContext()
 const std::string & GSSInitiatorContext::getRealm() const
 {
     if (!isReady())
-        throwNotReady();
+    {
+        // throwNotReady();
+        throw KerberosError("not ready (logical error)");
+    }
     return realm;
 }
 
@@ -39,6 +42,12 @@ bool GSSInitiatorContext::isFailed() const
 {
     return is_failed;
 }
+
+bool Credentials::isReady() const
+{
+    return is_ready;
+}
+
 
 #if WITH_GSSAPI
 
