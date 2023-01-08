@@ -5,6 +5,7 @@ SET ( clickhouse-cpp-lib-src
     base/platform.cpp
     base/socket.cpp
     base/wire_format.cpp
+    base/gssapi.cpp
 
     columns/array.cpp
     columns/column.cpp

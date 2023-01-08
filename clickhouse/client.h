@@ -181,14 +181,29 @@ struct ClientOptions {
          */
         DECLARE_FIELD(configuration, std::vector<CommandAndValue>, SetConfiguration, {});
 
+
+
         static const int DEFAULT_VALUE = -1;
     };
 
     // By default SSL is turned off.
     std::optional<SSLOptions> ssl_options = std::nullopt;
 
+    struct KerberosOptions {
+        DECLARE_FIELD(kerberos_negotiation, bool, SetNegotiation, false);
+        DECLARE_FIELD(mechanism, std::string, SetMechanism, "1.2.840.113554.1.2.2" /* OID: krb5 */);
+        DECLARE_FIELD(principal, std::string, SetPrincipal, "");
+        DECLARE_FIELD(realm, std::string, SetRealm, "");
+    };
+
+    std::optional<KerberosOptions> kerberos_options = std::nullopt;
+
+
     // Will throw an exception if client was built without SSL support.
     ClientOptions& SetSSLOptions(SSLOptions options);
+
+    // Will throw an exception if client was built without SSL support.
+    ClientOptions& SetKerberosOptions(KerberosOptions options);
 
 #undef DECLARE_FIELD
 };

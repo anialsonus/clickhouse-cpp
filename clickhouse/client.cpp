@@ -4,6 +4,7 @@
 #include "base/compressed.h"
 #include "base/socket.h"
 #include "base/wire_format.h"
+#include "base/gssapi.h"
 
 #include "columns/factory.h"
 
@@ -99,6 +100,17 @@ ClientOptions& ClientOptions::SetSSLOptions(ClientOptions::SSLOptions options)
 #endif
 }
 
+ClientOptions& ClientOptions::SetKerberosOptions(ClientOptions::KerberosOptions options)
+{
+#ifdef WITH_KERBEROS
+    kerberos_options = options;
+    return *this;
+#else
+    (void)options;
+    throw KerberosError("Library was built with no Kerberos (GSSAPI) support");
+#endif
+}
+
 namespace {
 
 std::unique_ptr<SocketFactory> GetSocketFactory(const ClientOptions& opts) {
@@ -107,8 +119,12 @@ std::unique_ptr<SocketFactory> GetSocketFactory(const ClientOptions& opts) {
     if (opts.ssl_options)
         return std::make_unique<SSLSocketFactory>(opts);
     else
+// #elif defined(WITH_KERBEROS)   // ???
+//     if (opts.kerberos_negotiation)
+//         return std::make_unique<KerberosSocketFactory>(opts);
+//     else
 #endif
-        return std::make_unique<NonSecureSocketFactory>();
+      return std::make_unique<NonSecureSocketFactory>();
 }
 
 }
@@ -157,6 +173,13 @@ private:
 
     void InitializeStreams(std::unique_ptr<SocketBase>&& socket);
 
+    bool GSSHandshake();
+    bool ReceiveGSSHello();
+    bool SendGSSHello();
+    bool ProcessGSSNegotiationData();
+    bool SendGSSNegotiationData(const std::string& auth_info);
+    bool GSSData();
+
 private:
     /// In case of network errors tries to reconnect to server and
     /// call fuc several times.
@@ -194,6 +217,15 @@ private:
     std::unique_ptr<InputStream> input_;
     std::unique_ptr<OutputStream> output_;
     std::unique_ptr<SocketBase> socket_;
+
+    std::unique_ptr<GSSInitiatorContext> gss_initiator_context_;
+
+
+    // // Will throw an exception if client was built without SSL support.
+    // ClientOptions& SetSSLOptions(SSLOptions options);
+    // ClientOptions& SetKerberosOptions(KerberosOptions options);
+
+
 
     ServerInfo server_info_;
 };
@@ -331,9 +363,21 @@ void Client::Impl::Ping() {
 void Client::Impl::ResetConnection() {
     InitializeStreams(socket_factory_->connect(options_));
 
-    if (!Handshake()) {
-        throw ProtocolError("fail to connect to " + options_.host);
+    if (options_.kerberos_options) {
+        if (auto ko = options_.kerberos_options.value(); ko.kerberos_negotiation) {
+            gss_initiator_context_.reset(new GSSInitiatorContext({ko.mechanism, ko.principal, ko.realm}));
+
+            if (!GSSHandshake()) {
+                throw ProtocolError("GSSHandshake fail to connect to " + options_.host);
+            }
+        }
     }
+    else {
+        if (!Handshake()) {
+            throw ProtocolError("Handshake fail to connect to " + options_.host);
+        }
+    }
+
 }
 
 const ServerInfo& Client::Impl::GetServerInfo() const {
@@ -341,10 +385,32 @@ const ServerInfo& Client::Impl::GetServerInfo() const {
 }
 
 bool Client::Impl::Handshake() {
+
     if (!SendHello()) {
         return false;
     }
     if (!ReceiveHello()) {
+        return false;
+    }
+    return true;
+}
+
+bool Client::Impl::GSSHandshake() {
+
+    if (!SendGSSHello()) {
+        return false;
+    }
+    while (GSSData()) {
+        if (!ProcessGSSNegotiationData()) {
+            return false;
+        }
+
+        // if (!SendGSSNegotiationData()) {
+        //     return false;
+        // }
+    }
+
+    if (!ReceiveGSSHello()) {
         return false;
     }
     return true;
@@ -812,6 +878,23 @@ bool Client::Impl::SendHello() {
     return true;
 }
 
+bool Client::Impl::SendGSSHello() {
+    WireFormat::WriteUInt64(*output_, ClientCodes::GSSHello);
+    WireFormat::WriteString(*output_, std::string(DBMS_NAME) + " client");
+    WireFormat::WriteUInt64(*output_, DBMS_VERSION_MAJOR);
+    WireFormat::WriteUInt64(*output_, DBMS_VERSION_MINOR);
+    WireFormat::WriteUInt64(*output_, REVISION);
+    WireFormat::WriteString(*output_, options_.default_database);
+
+    // get auth info
+    auto auth_info = gss_initiator_context_->processToken("");
+    WireFormat::WriteString(*output_, auth_info);
+
+    output_->Flush();
+
+    return true;
+}
+
 bool Client::Impl::ReceiveHello() {
     uint64_t packet_type = 0;
 
@@ -858,6 +941,100 @@ bool Client::Impl::ReceiveHello() {
     }
 
     return false;
+}
+
+bool Client::Impl::GSSData() {
+    uint64_t packet_type = 0;
+
+    if (!WireFormat::ReadVarint64(*input_, &packet_type)) {
+        return false;
+    }
+    if (packet_type == ServerCodes::GSSNegotiationData) {
+        return true;
+    }
+    else if (packet_type == ServerCodes::GSSHello) {
+        return false;
+    }
+    else {
+        throw ProtocolError(std::to_string((int)packet_type) + " received during GSS handshake");
+    }
+}
+
+bool Client::Impl::SendGSSNegotiationData(const std::string& auth_info) {
+    WireFormat::WriteUInt64(*output_, ClientCodes::GSSNegotiationData);
+    WireFormat::WriteString(*output_, auth_info);
+
+    output_->Flush();
+
+    return true;
+}
+
+bool Client::Impl::ProcessGSSNegotiationData() {
+    // packet type is read already
+    if (!WireFormat::ReadString(*input_, &server_info_.name)) {
+        return false;
+    }
+    std::string gss_response;  // move to ServerInfo  ??
+    if (!WireFormat::ReadString(*input_, &gss_response)) {
+        return false;
+    }
+    std::string gss_request = gss_initiator_context_->processToken(gss_response);
+
+    if (!SendGSSNegotiationData(gss_request)) {
+        return false;
+    }
+
+    return true;
+
+    // if (gss_initiator_context_->isReady()) {
+    //     return true;
+    // }
+    // else {
+    //     ProtocolError("GSS Initiator Context is not ready processing GSS Hello from server");
+    // }
+}
+
+bool Client::Impl::ReceiveGSSHello() {
+    // packet type is read already
+
+    if (!WireFormat::ReadString(*input_, &server_info_.name)) {
+        return false;
+    }
+    if (!WireFormat::ReadUInt64(*input_, &server_info_.version_major)) {
+        return false;
+    }
+    if (!WireFormat::ReadUInt64(*input_, &server_info_.version_minor)) {
+        return false;
+    }
+    if (!WireFormat::ReadUInt64(*input_, &server_info_.revision)) {
+        return false;
+    }
+
+    if (!WireFormat::ReadString(*input_, &server_info_.timezone)) {
+        return false;
+    }
+
+    if (!WireFormat::ReadString(*input_, &server_info_.display_name)) {
+        return false;
+    }
+
+    if (!WireFormat::ReadUInt64(*input_, &server_info_.version_patch)) {
+        return false;
+    }
+
+    std::string gss_response;  // move to ServerInfo  ??
+    if (!WireFormat::ReadString(*input_, &gss_response)) {
+        return false;
+    }
+    gss_initiator_context_->processToken(gss_response);
+    if (gss_initiator_context_->isReady()) {
+        return true;
+    }
+    else {
+        ProtocolError("GSS Initiator Context is not ready processing GSS Hello from server");
+    }
+    return true;
+
 }
 
 void Client::Impl::RetryGuard(std::function<void()> func) {

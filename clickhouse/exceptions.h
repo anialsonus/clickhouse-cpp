@@ -33,6 +33,10 @@ class OpenSSLError : public Error {
     using Error::Error;
 };
 
+class KerberosError : public Error {
+    using Error::Error;
+};
+
 class LZ4Error : public Error {
     using Error::Error;
 };

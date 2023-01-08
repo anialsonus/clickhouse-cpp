@@ -22,6 +22,11 @@ namespace clickhouse {
                                          /// This is such an inverted logic, where server sends requests
                                          /// And client returns back response
             ProfileEvents        = 14,   /// Packet with profile events from server.
+            MergeTreeReadTaskRequest = 15,  /// Request from a MergeTree replica to a coordinator
+
+
+            GSSHello = 16,
+            GSSNegotiationData = 17,
         };
     }
 
@@ -35,6 +40,15 @@ namespace clickhouse {
             Data        = 2,    /// Data `Block` (e.g. INSERT data), may be compressed.
             Cancel      = 3,    /// Cancel query.
             Ping        = 4,    /// Check server connection.
+            TablesStatusRequest = 5,        /// Check status of tables on the server.
+            KeepAlive = 6,                  /// Keep the connection alive
+            Scalar = 7,                     /// A block of data (compressed or not).
+            IgnoredPartUUIDs = 8,           /// List of unique parts ids to exclude from query processing
+            ReadTaskResponse = 9,           /// A filename to read from s3 (used in s3Cluster)
+            MergeTreeReadTaskResponse = 10, /// Coordinator's decision with a modified set of mark ranges allowed to read
+
+            GSSHello = 11,
+            GSSNegotiationData = 12,
         };
     }
 
