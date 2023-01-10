@@ -16,6 +16,8 @@
 #include <sstream>
 #include <stdexcept>
 
+#include <iostream>
+
 #if defined(WITH_OPENSSL)
 #include "base/sslsocket.h"
 #endif
@@ -102,7 +104,7 @@ ClientOptions& ClientOptions::SetSSLOptions(ClientOptions::SSLOptions options)
 
 ClientOptions& ClientOptions::SetKerberosOptions(ClientOptions::KerberosOptions options)
 {
-#ifdef WITH_KERBEROS
+#ifdef WITH_GSSAPI
     kerberos_options = options;
     return *this;
 #else
@@ -119,7 +121,7 @@ std::unique_ptr<SocketFactory> GetSocketFactory(const ClientOptions& opts) {
     if (opts.ssl_options)
         return std::make_unique<SSLSocketFactory>(opts);
     else
-// #elif defined(WITH_KERBEROS)   // ???
+// #elif defined(WITH_GSSAPI)   // ???
 //     if (opts.kerberos_negotiation)
 //         return std::make_unique<KerberosSocketFactory>(opts);
 //     else
@@ -365,7 +367,11 @@ void Client::Impl::ResetConnection() {
 
     if (options_.kerberos_options) {
         if (auto ko = options_.kerberos_options.value(); ko.kerberos_negotiation) {
-            gss_initiator_context_.reset(new GSSInitiatorContext({ko.mechanism, ko.principal, ko.realm}));
+            std::cout << "ko.mechanism " << ko.mechanism <<
+              ", ko.principal " << ko.principal <<
+              ", ko.realm" << ko.realm << std::endl;
+
+            gss_initiator_context_.reset(new GSSInitiatorContext({ko.mechanism, ko.principal, ko.realm, ko.target}));
 
             if (!GSSHandshake()) {
                 throw ProtocolError("GSSHandshake fail to connect to " + options_.host);
@@ -888,7 +894,11 @@ bool Client::Impl::SendGSSHello() {
 
     // get auth info
     auto auth_info = gss_initiator_context_->processToken("");
+    assert(!gss_initiator_context_->isFailed());
     WireFormat::WriteString(*output_, auth_info);
+
+    std::cerr << "auth info is "  << auth_info.length() << " bytes length" << std::endl;
+
 
     output_->Flush();
 

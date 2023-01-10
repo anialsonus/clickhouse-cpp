@@ -36,6 +36,7 @@ public:
         std::string mechanism = "1.2.840.113554.1.2.2"; // OID: krb5
         std::string principal;
         std::string realm;
+        std::string target;
     };
 
     explicit GSSInitiatorContext(const Params & params_);
@@ -61,8 +62,11 @@ private:
     std::string realm;
 
 #if WITH_GSSAPI
-    gss_ctx_id_t context_handle = GSS_C_NO_CONTEXT;
+    gss_ctx_id_t context_handle_ = GSS_C_NO_CONTEXT;
+    gss_ctx_id_t * context_handle = &context_handle_;
     gss_cred_id_t initiator_credentials_handle = GSS_C_NO_CREDENTIAL;
+    gss_name_t initiator_name;
+    gss_name_t target_name;
 #endif
 };
 

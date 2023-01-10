@@ -190,10 +190,11 @@ struct ClientOptions {
     std::optional<SSLOptions> ssl_options = std::nullopt;
 
     struct KerberosOptions {
-        DECLARE_FIELD(kerberos_negotiation, bool, SetNegotiation, false);
+        DECLARE_FIELD(kerberos_negotiation, bool, SetNegotiation, true);   //  get rid ?
         DECLARE_FIELD(mechanism, std::string, SetMechanism, "1.2.840.113554.1.2.2" /* OID: krb5 */);
         DECLARE_FIELD(principal, std::string, SetPrincipal, "");
         DECLARE_FIELD(realm, std::string, SetRealm, "");
+        DECLARE_FIELD(target, std::string, SetTarget, "");
     };
 
     std::optional<KerberosOptions> kerberos_options = std::nullopt;

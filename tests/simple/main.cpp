@@ -500,17 +500,18 @@ int main() {
                 .SetPort(   getEnvOrDefault<size_t>("CLICKHOUSE_PORT",     "9000"))
                 .SetUser(           getEnvOrDefault("CLICKHOUSE_USER",     "default"))
                 .SetPassword(       getEnvOrDefault("CLICKHOUSE_PASSWORD", ""))
-                .SetDefaultDatabase(getEnvOrDefault("CLICKHOUSE_DB",       "default"));
+                .SetDefaultDatabase(getEnvOrDefault("CLICKHOUSE_DB",       "default"))
+                .SetKerberosOptions(ClientOptions::KerberosOptions().SetPrincipal("clkerbuser").SetTarget("HTTP/golshtein-centos-1.ru-central1.internal@RU-CENTRAL1.INTERNAL"));
 
         {
             Client client(ClientOptions(localHostEndpoint)
-                    .SetPingBeforeQuery(true));
+                    .SetPingBeforeQuery(false /* true */));
             RunTests(client);
         }
 
         {
             Client client(ClientOptions(localHostEndpoint)
-                    .SetPingBeforeQuery(true)
+                    .SetPingBeforeQuery(false /* true */)
                     .SetCompressionMethod(CompressionMethod::LZ4));
             RunTests(client);
         }

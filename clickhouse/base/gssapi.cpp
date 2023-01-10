@@ -1,5 +1,7 @@
 #include "../client.h"
 #include "../exceptions.h"
+#include <gssapi/gssapi_generic.h>
+#include <gssapi/gssapi_krb5.h>
 #include <gssapi/gssapi.h>
 #include <gssapi/gssapi_ext.h>
 #include "gssapi.h"
@@ -7,6 +9,7 @@
 
 #include <stdexcept>
 #include <mutex>
+#include <iostream>
 
 namespace clickhouse
 {
@@ -25,6 +28,7 @@ GSSInitiatorContext::GSSInitiatorContext(const GSSInitiatorContext::Params & par
 
 GSSInitiatorContext::~GSSInitiatorContext()
 {
+    std::cout << "GSSInitiatorContext dtor" << std::endl;
     resetHandles();
 }
 
@@ -281,6 +285,7 @@ bool equalMechanisms(const std::string & left_str, const gss_OID & right_oid)
 
 void GSSInitiatorContext::reset()
 {
+    std::cout << "Top of GSSInitiatorContext::reset" << std::endl;
     is_ready = false;
     is_failed = false;
     user_name.clear();
@@ -290,104 +295,183 @@ void GSSInitiatorContext::reset()
 
 void GSSInitiatorContext::resetHandles() noexcept
 {
-    // std::scoped_lock lock(gss_global_mutex);
+    std::scoped_lock lock(gss_global_mutex);
 
-    // if (initiator_credentials_handle != GSS_C_NO_CREDENTIAL)
-    // {
-    //     OM_uint32 minor_status = 0;
-    //     [[maybe_unused]] OM_uint32 major_status = gss_release_cred(
-    //         &minor_status,
-    //         &initiator_credentials_handle
-    //     );
-    //     initiator_credentials_handle = GSS_C_NO_CREDENTIAL;
-    // }
+    std::cout << "Top of GSSInitiatorContext::resetHandles" << std::endl;
 
-    // if (context_handle != GSS_C_NO_CONTEXT)
-    // {
-    //     OM_uint32 minor_status = 0;
-    //     [[maybe_unused]] OM_uint32 major_status = gss_delete_sec_context(
-    //         &minor_status,
-    //         &context_handle,
-    //         GSS_C_NO_BUFFER
-    //     );
-    //     context_handle = GSS_C_NO_CONTEXT;
-    // }
+    if (initiator_credentials_handle != GSS_C_NO_CREDENTIAL)
+    {
+        OM_uint32 minor_status = 0;
+        [[maybe_unused]] OM_uint32 major_status = gss_release_cred(
+            &minor_status,
+            &initiator_credentials_handle
+        );
+        initiator_credentials_handle = GSS_C_NO_CREDENTIAL;
+    }
+
+    if (*context_handle != GSS_C_NO_CONTEXT)
+    {
+        OM_uint32 minor_status = 0;
+        [[maybe_unused]] OM_uint32 major_status = gss_delete_sec_context(
+            &minor_status,
+            /* & */context_handle,
+            GSS_C_NO_BUFFER
+        );
+        *context_handle = GSS_C_NO_CONTEXT;
+    }
 }
 
 void GSSInitiatorContext::initHandles()
 {
     // std::scoped_lock lock(gss_global_mutex);
 
-    // resetHandles();
+    std::cout << "Top of GSSInitiatorContext::initHandles" << std::endl;
 
-    // if (!params.principal.empty())
-    // {
-    //     if (!params.realm.empty())
-    //         throw KerberosError("Realm and principal name cannot be specified simultaneously");
 
-    //     gss_buffer_desc initiator_name_buf;
-    //     initiator_name_buf.length = params.principal.size();
-    //     initiator_name_buf.value = const_cast<char *>(params.principal.c_str());
+    resetHandles();
 
-    //     gss_name_t initiator_name = GSS_C_NO_NAME;
+    if (!params.principal.empty())
+    {
+        std::cout << "GSSInitiatorContext::initHandles principal " << params.principal << std::endl;
+        if (!params.realm.empty())
+            throw KerberosError("Realm and principal name cannot be specified simultaneously");
 
-    //     SCOPE_EXIT({
-    //         if (initiator_name != GSS_C_NO_NAME)
-    //         {
-    //             OM_uint32 minor_status = 0;
-    //             [[maybe_unused]] OM_uint32 major_status = gss_release_name(
-    //                 &minor_status,
-    //                 &initiator_name
-    //             );
-    //             initiator_name = GSS_C_NO_NAME;
-    //         }
-    //     });
+        gss_buffer_desc initiator_name_buf;
+        initiator_name_buf.length = params.principal.size();
+        initiator_name_buf.value = const_cast<char *>(params.principal.c_str());
 
-    //     OM_uint32 minor_status = 0;
-    //     OM_uint32 major_status = gss_import_name(
-    //         &minor_status,
-    //         &initiator_name_buf,
-    //         GSS_C_NT_HOSTBASED_SERVICE,
-    //         &initiator_name
-    //     );
+        /* gss_name_t */ initiator_name = GSS_C_NO_NAME;
 
-    //     if (GSS_ERROR(major_status))
-    //     {
-    //         const auto messages = extractStatusMessages(major_status, minor_status, GSS_C_NO_OID);
-    //         throw KerberosError("gss_import_name() failed" + (messages.empty() ? "" : ": " + messages));
-    //     }
+        // SCOPE_EXIT({
+        //     if (initiator_name != GSS_C_NO_NAME)
+        //     {
+        //         OM_uint32 minor_status = 0;
+        //         [[maybe_unused]] OM_uint32 major_status = gss_release_name(
+        //             &minor_status,
+        //             &initiator_name
+        //         );
+        //         initiator_name = GSS_C_NO_NAME;
+        //     }
+        // });
 
-    //     minor_status = 0;
-    //     major_status = gss_acquire_cred(
-    //         &minor_status,
-    //         initiator_name,
-    //         GSS_C_INDEFINITE,
-    //         GSS_C_NO_OID_SET,
-    //         GSS_C_ACCEPT,
-    //         &initiator_credentials_handle,
-    //         nullptr,
-    //         nullptr
-    //     );
+        OM_uint32 minor_status = 0;
+        OM_uint32 major_status = gss_import_name(
+            &minor_status,
+            &initiator_name_buf,
+            (gss_OID) gss_nt_user_name /* GSS_C_NT_HOSTBASED_SERVICE */,
+            &initiator_name
+        );
 
-    //     if (GSS_ERROR(major_status))
-    //     {
-    //         const auto messages = extractStatusMessages(major_status, minor_status, GSS_C_NO_OID);
-    //         throw KerberosError("gss_acquire_cred() failed" + (messages.empty() ? "" : ": " + messages));
-    //     }
-    // }
+        if (GSS_ERROR(major_status))
+        {
+            const auto messages = extractStatusMessages(major_status, minor_status, GSS_C_NO_OID);
+            if (initiator_name != GSS_C_NO_NAME)
+            {
+                OM_uint32 minor_status = 0;
+                [[maybe_unused]] OM_uint32 major_status = gss_release_name(
+                    &minor_status,
+                    &initiator_name
+                );
+                initiator_name = GSS_C_NO_NAME;
+            }
+            std::cout << "GSSInitiatorContext::initHandles gss_import_name: error " << messages << std::endl;
+            throw KerberosError("gss_import_name() failed" + (messages.empty() ? "" : ": " + messages));
+        }
+
+
+
+        gss_buffer_desc target_name_buf;
+        target_name_buf.length = params.target.size();
+        target_name_buf.value = const_cast<char *>(params.target.c_str());
+        minor_status = 0;
+        major_status = gss_import_name(
+            &minor_status,
+            &target_name_buf,
+            (gss_OID) gss_nt_user_name /* GSS_C_NT_HOSTBASED_SERVICE */,
+            &target_name
+        );
+
+        if (GSS_ERROR(major_status))
+        {
+            const auto messages = extractStatusMessages(major_status, minor_status, GSS_C_NO_OID);
+            if (target_name != GSS_C_NO_NAME)
+            {
+                OM_uint32 minor_status = 0;
+                [[maybe_unused]] OM_uint32 major_status = gss_release_name(
+                    &minor_status,
+                    &target_name
+                );
+                target_name = GSS_C_NO_NAME;
+            }
+            std::cout << "GSSInitiatorContext::initHandles gss_import_name (target): error " << messages << std::endl;
+            throw KerberosError("gss_import_name() failed" + (messages.empty() ? "" : ": " + messages));
+        }
+
+
+
+
+        gss_OID_set_desc mechs, *mechsp = GSS_C_NO_OID_SET;
+        mechs.elements = GSS_C_NULL_OID;
+        mechs.count = 1;
+        mechsp = &mechs;
+
+
+        std::cout << "GSSInitiatorContext::initHandles initiator_name_buf.value " << reinterpret_cast<char*>(initiator_name_buf.value) << std::endl;
+
+        minor_status = 0;
+        major_status = gss_acquire_cred(
+            &minor_status,
+            initiator_name,
+            0 /*GSS_C_INDEFINITE*/,
+            mechsp /*GSS_C_NO_OID_SET*/,
+            // GSS_C_ACCEPT,
+            GSS_C_INITIATE,
+            &initiator_credentials_handle,
+            nullptr,
+            nullptr
+        );
+
+        if (GSS_ERROR(major_status))
+        {
+            const auto messages = extractStatusMessages(major_status, minor_status, GSS_C_NO_OID);
+            if (initiator_name != GSS_C_NO_NAME)
+            {
+                OM_uint32 minor_status = 0;
+                [[maybe_unused]] OM_uint32 major_status = gss_release_name(
+                    &minor_status,
+                    &initiator_name
+                );
+                initiator_name = GSS_C_NO_NAME;
+            }
+            std::cout << "GSSInitiatorContext::initHandles gss_acquire_cred: error " << messages << std::endl;
+            throw KerberosError("gss_acquire_cred() failed" + (messages.empty() ? "" : ": " + messages));
+        }
+        // if (initiator_name != GSS_C_NO_NAME)
+        // {
+        //     OM_uint32 minor_status = 0;
+        //     [[maybe_unused]] OM_uint32 major_status = gss_release_name(
+        //         &minor_status,
+        //         &initiator_name
+        //     );
+        //     initiator_name = GSS_C_NO_NAME;
+        // }
+    }
 }
 
 std::string GSSInitiatorContext::processToken(const std::string & input_token)
 {
     std::scoped_lock lock(gss_global_mutex);
 
+    std::cout << "top of GSSInitiatorContext::processToken" << std::endl;
+
     std::string output_token;
 
     try
     {
-        if (is_ready || is_failed || context_handle == GSS_C_NO_CONTEXT)
+        if (is_ready || is_failed || *context_handle == GSS_C_NO_CONTEXT)
             reset();
 
+        std::cout << "GSSInitiatorContext::processToken: after reset" << std::endl;
         gss_buffer_desc input_token_buf;
         input_token_buf.length = input_token.size();
         input_token_buf.value = const_cast<char *>(input_token.c_str());
@@ -396,7 +480,7 @@ std::string GSSInitiatorContext::processToken(const std::string & input_token)
         output_token_buf.length = 0;
         output_token_buf.value = nullptr;
 
-        gss_name_t initiator_name = GSS_C_NO_NAME;
+        // gss_name_t initiator_name = GSS_C_NO_NAME;
         gss_OID actual_mech_type;
 
 
@@ -437,15 +521,20 @@ std::string GSSInitiatorContext::processToken(const std::string & input_token)
         //     nullptr
         // );
 
+        std::cout << "GSSInitiatorContext::processToken: before gss_init_sec_context" << std::endl;
         OM_uint32 major_status = gss_init_sec_context(
           &minor_status,
           initiator_credentials_handle,
-          &context_handle,
-          initiator_name,
+          /* & */context_handle,
+
+
+          target_name,  /* initiator_name, */
+
+
           nullptr, /* input mech type*/
           flags,  /* ret_flags */
           0,   /* time_req */
-          GSS_C_NO_CHANNEL_BINDINGS, /* input_chan_bindings */
+          nullptr /*GSS_C_NO_CHANNEL_BINDINGS*/, /* input_chan_bindings */
           &input_token_buf,
           &actual_mech_type,   /* actual_mech_type */
           &output_token_buf,
@@ -455,32 +544,41 @@ std::string GSSInitiatorContext::processToken(const std::string & input_token)
 
         if (major_status == GSS_S_COMPLETE)
         {
+            std::cout << "GSSInitiatorContext::processToken: GSS_S_COMPLETE" << std::endl;
             if (!params.mechanism.empty() && !equalMechanisms(params.mechanism, actual_mech_type))
+            {
+                std::cout << "gss_accept_sec_context() succeeded, but: the authentication mechanism is not what was expected" << std::endl;
+
                 throw KerberosError("gss_accept_sec_context() succeeded, but: the authentication mechanism is not what was expected");
+            }
+
 
             if (flags & GSS_C_ANON_FLAG)
+            {
+                std::cout << "gss_accept_sec_context() succeeded, but: the initiator does not wish to be authenticated" << std::endl;
                 throw KerberosError("gss_accept_sec_context() succeeded, but: the initiator does not wish to be authenticated");
+            }
 
             std::tie(user_name, realm) = extractNameAndRealm(initiator_name);
 
 
-            major_status = gss_release_name(
-                &minor_status,
-                &initiator_name
-            );
-            initiator_name = GSS_C_NO_NAME;
+            // major_status = gss_release_name(
+            //     &minor_status,
+            //     &initiator_name
+            // );
+            // initiator_name = GSS_C_NO_NAME;
 
 
 
 
-            if (user_name.empty())
-                throw KerberosError("gss_accept_sec_context() succeeded, but: the initiator name cannot be extracted");
+            // if (user_name.empty())
+            //     throw KerberosError("gss_accept_sec_context() succeeded, but: the initiator name cannot be extracted");
 
-            if (realm.empty())
-                throw KerberosError("gss_accept_sec_context() succeeded, but: the initiator realm cannot be extracted");
+            // if (realm.empty())
+            //     throw KerberosError("gss_accept_sec_context() succeeded, but: the initiator realm cannot be extracted");
 
-            if (!params.realm.empty() && params.realm != realm)
-                throw KerberosError("gss_accept_sec_context() succeeded, but: the initiator realm is not what was expected (expected: " + params.realm + ", actual: " + realm + ")");
+            // if (!params.realm.empty() && params.realm != realm)
+            //     throw KerberosError("gss_accept_sec_context() succeeded, but: the initiator realm is not what was expected (expected: " + params.realm + ", actual: " + realm + ")");
 
             output_token = bufferToString(output_token_buf);
 
@@ -492,10 +590,11 @@ std::string GSSInitiatorContext::processToken(const std::string & input_token)
             is_ready = true;
             is_failed = false;
 
-            resetHandles();
+            // resetHandles();
         }
         else if (!GSS_ERROR(major_status) && (major_status & GSS_S_CONTINUE_NEEDED))
         {
+            std::cout << "GSSInitiatorContext::processToken: GSS_S_CONTINUE_NEEDED" << std::endl;
             output_token = bufferToString(output_token_buf);
 
             is_ready = false;
@@ -504,12 +603,14 @@ std::string GSSInitiatorContext::processToken(const std::string & input_token)
         else
         {
             const auto messages = extractStatusMessages(major_status, minor_status, actual_mech_type);
+            std::cout << "GSSInitiatorContext::processToken: error " << messages << std::endl;
             throw KerberosError("gss_accept_sec_context() failed" + (messages.empty() ? "" : ": " + messages));
         }
     }
     catch (...)
     {
         // tryLogCurrentException(log, "Could not process GSS token");
+        std::cout << "GSSInitiatorContext::processToken: catch(...)" << std::endl;
 
         is_ready = true;
         is_failed = true;
